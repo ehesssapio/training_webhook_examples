@@ -17,6 +17,7 @@ from approve_shipment import ApproveShipment
 from multilayer_plating_plate_dimensions import MultiLayerPlatingPlateDimensions
 from receive_shipment import ReceiveShipment
 from bulk_samples_from_study import BulkSamplesFromStudy
+from nanodrop_assay_import import NanodropAssayImport
 
 
 def _env_flag_true(name: str) -> bool:
@@ -92,6 +93,9 @@ config.register('/change-plate-dimensions', MultiLayerPlatingPlateDimensions)
 
 # Bulk samples under a study (main toolbar): study → count → accessioned IDs → layout table → process or Logged.
 config.register('/bulk-samples-from-study', BulkSamplesFromStudy)
+
+# Nanodrop: ELN rule (submit) or experiment entry toolbar — parses attachment, creates AssayResult rows + table entry.
+config.register('/nanodrop-assay-import', NanodropAssayImport)
 
 app = WebhookServerFactory.configure_flask_app(app=None, config=config)
 

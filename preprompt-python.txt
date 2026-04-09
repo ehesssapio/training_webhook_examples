@@ -1,0 +1,305 @@
+Created: 2026-03-30 12:00
+Agent type: Composer
+Modified: 2026-04-01
+Agent type: Composer
+Modified: 2026-04-01 16:00
+Agent type: Composer
+
+Sapio Sciences Python Preprompt (TOC-based summary)
+For full example code, fetch the MCP resources (sapio:// URIs) listed below. This document is the resource sapio://preprompts/python.
+
+Wrap generated code between triple backticks: ```
+
+================================================================
+WHEN TO USE MCP RESOURCES AND TOOLS
+================================================================
+
+Before acting or planning, review the MCP server to locate examples and resources relevant to the task.
+
+The same MCP server also serves Java plugin preprompts and examples (sapio://preprompts/java, sapio://examples/java/...); this document is for the Python stack only.
+
+FIRST: Call list_sapio_resources() and fetch sapio://meta/tool-index for an overview of tools and resources (with descriptions). Optional shortcut: get_sapio_python_webhook_prompt(). Use this to pick the correct resource before writing any Sapio Python code.
+
+Where to look: Webhook invocation examples → sapio://examples/python/invocations/<name>. Python feature/manager-style examples → sapio://examples/python/features/<name>. Coding standards → sapio://docs/cursor-rules. Python workflow and mapping → sapio://preprompts/python (this document). Overview of all tools and resources → sapio://meta/tool-index. Use list_sapio_resources() then fetch_mcp_resource(server, uri) to read any resource.
+
+Before writing any Sapio Python code:
+- Fetch resource sapio://docs/cursor-rules and follow the guidance that applies to Python (and shared REST rules where relevant).
+- For example code for a given webhook invocation or REST feature, fetch the corresponding resource from the "Scenario → Resource" tables below. Do not guess URIs.
+- For the target system's data model, ELN templates, and datatype layouts/fields: use the user's Sapio REST client, LIMS UI, or documentation—this MCP server does not expose live API tools.
+- For configuration records (ExemplarConfig and child configs): fetch sapio://docs/configuration-records for domain concepts; for reading or updating from Python/REST, use Sapio product documentation or support as needed.
+
+The example from a resource is a TEMPLATE. Replace placeholder names (data type names, field names, labels) with the user's actual names and logic. Do not copy the example verbatim. All generated code must comply with the rules from sapio://docs/cursor-rules.
+
+For Python feature resources (e.g. sapio://examples/python/features/record-model-manager), use the example to see how to call the REST-side APIs; integrate that pattern into the webhook or standalone script the user asked for (using the appropriate invocation resource if needed).
+
+================================================================
+TABLE OF CONTENTS (SUMMARY)
+================================================================
+
+1. Overview & Purpose
+2. Webhooks vs Standalone Scripts
+3. sapiopylib vs sapiopycommons (library split)
+4. ELN & Global Records (conceptual)
+5. Python Invocation Examples (webhooks)
+6. Mandatory Pre-Code Requirements
+7. REST & Libraries at a Glance
+8. Performance & Queries
+9. Data Records & Fields (REST / PyRecordModel)
+10. ELN Experiments & Entries (persist order, entry types)
+11. Event-Style Webhooks (on-save, status change)
+12. Boilerplate (webhook and standalone)
+13. Webhook Results and UX
+14. Conventions, Common Mistakes & Output
+15. Python UI Scope (dialogs, table capture)
+16. Configuration Records
+17. Deprecations & REST Hygiene
+18. Python Feature Example Resources
+19. Final Rules & Enforcement Summary
+
+================================================================
+1. OVERVIEW & PURPOSE
+================================================================
+
+This preprompt supports writing Sapio extensions in Python: primarily webhooks (CommonsWebhookHandler, rules, ELN handlers) and standalone scripts that use SapioUser and sapiopylib REST clients. Scope: scenarios covered by sapio://examples/python/invocations/* and sapio://examples/python/features/*. Assume the target Sapio system has a defined data model; obtain model details from the user's environment (not from this MCP server).
+
+================================================================
+2. WEBHOOKS VS STANDALONE SCRIPTS
+================================================================
+
+Webhook: A class extending CommonsWebhookHandler (or a focused rule base such as OnSaveRuleHandler / ElnRuleHandler where the example shows it) with def run(self, context: SapioWebhookContext) -> SapioWebhookResult:. Context provides user, experiment, entries, and record access appropriate to the invocation. Prioritize sapiopycommons (CallbackUtil, RecordHandler, ExperimentHandler, etc.) for dialogs, File Bridge, and context-driven record work—see sapio://docs/cursor-rules.
+
+Standalone script: Construct SapioUser(url=..., api_token=...) pointing at the customer's /webservice/api base; use DataMgmtServer, DataRecord helpers, and paging types from sapiopylib as in the feature examples. Do not embed credentials in shared code.
+
+================================================================
+3. SAPIOPYLIB VS SAPIOPYCOMMONS (LIBRARY SPLIT)
+================================================================
+
+Use the correct package for each type. When unsure, copy imports from the fetched python-examples resource—do not guess modules.
+
+Concern                                          | Package            | Examples (see python-examples)
+-------------------------------------------------|--------------------|------------------------------------------------------------------
+REST client, user session, DataMgmtServer        | sapiopylib         | SapioUser, DataMgmtServer in feature examples
+Webhook context and result types                 | sapiopylib         | from sapiopylib.rest.pojo.webhook.WebhookContext import SapioWebhookContext; from sapiopylib.rest.pojo.webhook.WebhookResult import SapioWebhookResult
+PyRecordModel, record/ELN POJOs used in code     | sapiopylib         | sapiopylib.rest.utils.recordmodel.PyRecordModel; ELN pojo imports in invocations
+Webhook handler base, CallbackUtil, rule bases, RecordHandler / ExperimentHandler | sapiopycommons | CommonsWebhookHandler, OnSaveRuleHandler, sapiopycommons.customreport.* where used
+Shared webhook exceptions                        | sapiopycommons     | sapiopycommons.general.exceptions
+
+Anti-pattern: Do not attribute SapioWebhookContext, SapioWebhookResult, or PyRecordModel to sapiopycommons—they are sapiopylib. Do not attribute CommonsWebhookHandler, CallbackUtil, or OnSaveRuleHandler to sapiopylib—they are sapiopycommons. Webhooks normally import from both libraries.
+
+================================================================
+4. ELN & GLOBAL RECORDS (CONCEPTUAL)
+================================================================
+
+Sapio tracks experiments (ELN) and global data records (instances of configurable Data Types). ELN types such as ELNExperiment, ELNExperimentDetail, and ELNSampleDetail are fixed platform types used inside experiments; entries live in tabs and can reference global types, ELN detail types, charts, or text. Unless the user asks to define ELN types or field sets, assume work uses ordinary global records and/or experiment content as they describe. Users edit ELN-type fields in experiment context; global types can be edited in entries or in table/form views.
+
+================================================================
+5. PYTHON INVOCATION EXAMPLES (WEBHOOKS)
+================================================================
+
+These map to python-examples under invocations/ (and table-dialog under features/). Each URI is the full sapio:// path.
+
+Main toolbar (global)              → sapio://examples/python/invocations/main-toolbar-webhook
+On-save rule                       → sapio://examples/python/invocations/on-save-webhook
+Experiment entry initialization    → sapio://examples/python/invocations/experiment-entry-init-webhook
+Experiment entry validation        → sapio://examples/python/invocations/exp-entry-validation-webhook
+Experiment entry toolbar           → sapio://examples/python/invocations/experiment-entry-toolbar-webhook
+Notebook experiment toolbar        → sapio://examples/python/invocations/experiment-toolbar-webhook
+Experiment status change           → sapio://examples/python/invocations/exp-status-change-webhook
+Selection list                     → sapio://examples/python/invocations/selection-list-webhook
+Form toolbar                       → sapio://examples/python/invocations/form-toolbar-webhook
+Table dialog / table-toolbar style → sapio://examples/python/invocations/table-dialog-webhook
+Experiment rule (ELN sample)       → sapio://examples/python/invocations/experiment-webhook
+Complex Data Loader                → sapio://examples/python/invocations/complex-data-loader
+  (same source file as sapio://examples/python/features/data-loader-config)
+
+================================================================
+6. MANDATORY PRE-CODE REQUIREMENTS
+================================================================
+
+STEP 1: Fetch sapio://docs/cursor-rules and adhere to the returned rules when generating any code.
+STEP 2: Classify the task: webhook (which invocation?) vs standalone script vs "use a specific manager/feature API". If no Python example matches, use sapio://meta/tool-index, Sapio product documentation, or ask the user—do not invent URIs.
+STEP 3: Fetch the EXACT resource from the tables in sections 5 and 18. Do not guess URIs; use the table or sapio://meta/tool-index.
+STEP 4: Use the resource content as a template: adapt names, fields, and logic to the user's request; do not copy verbatim. Ensure compliance with Step 1.
+
+User request keywords → resource (examples):
+- "main menu", "global toolbar", "main toolbar webhook" → sapio://examples/python/invocations/main-toolbar-webhook
+- "on save", "when record is saved", "save rule" → sapio://examples/python/invocations/on-save-webhook
+- "entry init", "when entry opens", "first open entry" → sapio://examples/python/invocations/experiment-entry-init-webhook
+- "validate entry", "entry completed", "ELN validation" → sapio://examples/python/invocations/exp-entry-validation-webhook
+- "button inside entry", "entry toolbar" → sapio://examples/python/invocations/experiment-entry-toolbar-webhook
+- "experiment toolbar", "notebook toolbar" (not inside one entry) → sapio://examples/python/invocations/experiment-toolbar-webhook
+- "status change", "experiment status", "when status becomes" → sapio://examples/python/invocations/exp-status-change-webhook
+- "selection list", "dropdown from query" → sapio://examples/python/invocations/selection-list-webhook
+- "form toolbar", "button on form" → sapio://examples/python/invocations/form-toolbar-webhook
+- "table dialog", "bulk grid", "table toolbar" (Python) → sapio://examples/python/invocations/table-dialog-webhook
+- "experiment webhook", "ELN rule", "complete experiment" (full sample) → sapio://examples/python/invocations/experiment-webhook
+- "complex data loader", "CDL", "data load" → sapio://examples/python/invocations/complex-data-loader (or sapio://examples/python/features/data-loader-config)
+- "accession", "generate IDs" → sapio://examples/python/features/accession-manager
+- "custom report", "query columns" → sapio://examples/python/features/custom-report-manager
+- "record model", "PyRecordModel", "add new record" → sapio://examples/python/features/record-model-manager
+- "parent child", "relationship" (REST/record model) → sapio://examples/python/features/record-model-relationship-manager
+- "file upload", "user picks file" → sapio://examples/python/features/file-manager (and sapio://docs/cursor-rules)
+- "ELN entries", "add entry", "persist order" → sapio://examples/python/features/experiment-entry-manager
+- "plate", "well", "aliquot to plate" → sapio://examples/python/features/plate-aliquot
+- "experiment roles", "ELN roles" → sapio://examples/python/features/experiment-roles
+- "index assignment", "pool", "sample sheet" → sapio://examples/python/features/index-assignment-and-pool
+- "user dialog", "CallbackUtil", "form dialog" → sapio://examples/python/features/client-callback
+
+Prohibited: See sapio://docs/cursor-rules (no invented APIs; only sapiopylib, sapiopycommons, and standard library unless the user explicitly requests otherwise).
+
+--- Data model placeholder (fill from user's Sapio system / documentation) ---
+
+================================================================
+DATA MODEL START FOR THE TARGET SYSTEM YOU ARE CREATING CODE
+================================================================
+[INSERT DATA MODEL HERE - from the user's target Sapio system or docs]
+================================================================
+DATA MODEL END FOR THE TARGET SYSTEM YOU ARE CREATING CODE
+================================================================
+
+================================================================
+7. REST & LIBRARIES AT A GLANCE
+================================================================
+
+The Sapio Web Service is rooted under /webservice/api on the customer instance. Typical authentication: header X-APP-KEY (application GUID) plus one of Basic auth, X-API-TOKEN, or Bearer token; optional X-USER-GROUP. Many list endpoints are paginated—use next page criteria from responses when iterating. Prefer sapiopylib and sapiopycommons over raw HTTP: they encode correct types, paging helpers, and webhook patterns. Do not paste full OpenAPI/Redoc into solutions; for raw endpoint details use the customer's API documentation or installed library source. Deprecated REST paths called out in product docs should be avoided in favor of documented replacements.
+
+================================================================
+8. PERFORMANCE & QUERIES
+================================================================
+
+Prefer batch creates/updates and custom reports for read-heavy or list workflows when the fetched example uses them (sapio://examples/python/features/custom-report-manager; auto-pager patterns in selection-list or report examples). Avoid N+1 patterns: do not loop with one server call per record when a batch operation or report exists. For pagination, use next page criteria (see section 7) and patterns in sapio://examples/python/features/data-record-manager or report examples as appropriate.
+
+================================================================
+9. DATA RECORDS & FIELDS (REST / PYRECORDMODEL)
+================================================================
+
+Prefer PyRecordModel (sapiopylib.rest.utils.recordmodel) and RecordHandler (sapiopycommons) as wired in sapio://examples/python/features/record-model-manager—follow that example's imports; do not mix up sapiopylib and sapiopycommons types. Field values: use types and conversions appropriate to the API (string fields: safe str / None handling per sapio://docs/cursor-rules); follow examples rather than inventing low-level buffer types. When comparing records, compare record IDs or stable keys from the API, not object identity, unless the example documents otherwise. Attachments: see sapio://examples/python/features/file-manager and sapio://docs/cursor-rules.
+
+================================================================
+10. ELN EXPERIMENTS & ENTRIES (PERSIST ORDER, ENTRY TYPES)
+================================================================
+
+Persist order (REST / webhook): typically create or update records first so new record IDs exist, then apply experiment entry changes, then complete the save/commit sequence shown in sapio://examples/python/features/experiment-entry-manager and the relevant webhook example. Always follow the fetched Python example; do not substitute APIs from unrelated stacks. After structural changes (e.g. new entries), refresh entry or experiment state before the next update when the example or API requires it.
+
+Entry kinds: form-style, attachment-style, table-style, and plugin-style entries behave differently. Do not assume "one displayed record" means a single API pattern. Use template or API metadata and runtime checks as described in sapio://docs/cursor-rules and sapio://examples/python/features/experiment-entry-manager.
+
+================================================================
+11. EVENT-STYLE WEBHOOKS (ON-SAVE, STATUS CHANGE)
+================================================================
+
+On-save: Follow sapio://examples/python/invocations/on-save-webhook, including inline comments on rule context and when to call store_and_commit (or equivalent) for your scenario.
+
+Experiment status change: Follow sapio://examples/python/invocations/exp-status-change-webhook and its comments for what the platform already persists—do not duplicate persistence unless the example shows it.
+
+================================================================
+12. BOILERPLATE (WEBHOOK AND STANDALONE)
+================================================================
+
+Webhook (standard imports and entry point—adjust subclasses per example resource):
+
+from sapiopycommons.webhook.webhook_handlers import CommonsWebhookHandler
+from sapiopycommons.callbacks.callback_util import CallbackUtil
+from sapiopycommons.eln.experiment_handler import ExperimentHandler
+from sapiopycommons.general.exceptions import (
+    SapioUserErrorException,
+    SapioCriticalErrorException,
+    SapioUserCancelledException,
+    SapioException,
+    SapioDialogTimeoutException,
+)
+from sapiopycommons.general.sapio_links import SapioNavigationLinker
+from sapiopycommons.recordmodel.record_handler import RecordHandler
+from sapiopycommons.rules.eln_rule_handler import ElnRuleHandler
+from sapiopycommons.rules.on_save_rule_handler import OnSaveRuleHandler
+from sapiopylib.rest.pojo.webhook.WebhookContext import SapioWebhookContext
+from sapiopylib.rest.pojo.webhook.WebhookResult import SapioWebhookResult
+
+class WebhookHandler(CommonsWebhookHandler):
+    def run(self, context: SapioWebhookContext) -> SapioWebhookResult:
+        ...
+
+Standalone (minimal pattern—extend imports per feature examples):
+
+from sapiopylib.rest.User import SapioUser
+from sapiopylib.rest.DataMgmtService import DataMgmtServer
+
+user: SapioUser = SapioUser(url="https://example.sapioeln.com/webservice/api", api_token="api_token_goes_here")
+# Then obtain managers/services as in sapio://examples/python/features/data-mgmt-server or related resources.
+
+================================================================
+13. WEBHOOK RESULTS AND UX
+================================================================
+
+SapioWebhookResult (sapiopylib): Use success/failure and display_text or notifications only as demonstrated in the fetched example; do not add constructor or keyword arguments not shown there. Cancellation: catch SapioUserCancelledException (sapiopycommons.general.exceptions) per sapio://docs/cursor-rules and return a clean SapioWebhookResult instead of propagating uncaught. Dialog timeouts: SapioDialogTimeoutException (sapiopycommons)—see sapio://examples/python/features/client-callback for full dialog patterns.
+
+User-facing text: In common informational displays (display_text, notifications, dialog copy, user-visible logs), show human-readable user names, not raw user IDs, unless the user explicitly asks for IDs or the context is clearly technical/debugging. Resolve display/login name via the appropriate API when needed; if unclear, ask the user (see sapio://docs/cursor-rules).
+
+================================================================
+14. CONVENTIONS, COMMON MISTAKES & OUTPUT
+================================================================
+
+Use type hints on variables and function signatures (see sapio://docs/cursor-rules). Prefer built-in generics: list, dict, not typing.List or typing.Dict. Only use sapiopylib, sapiopycommons, and the Python standard library unless the user explicitly requests another library. When unsure of a class, ask the user rather than inventing names. Unless the user asks for explanation, output the code they need; keep prose minimal.
+
+Common mistakes: third-party libraries; typing.List / typing.Dict; inventing REST paths or request shapes; ignoring user cancellation; pasting large OpenAPI excerpts into answers. Correct approach: fetch the exact sapio://examples/python/... resource and sapio://docs/cursor-rules; use CommonsWebhookHandler with def run(self, context: SapioWebhookContext) -> SapioWebhookResult: and avoid obsolete handler names from outdated tutorials.
+
+For additional WRONG vs CORRECT patterns, fetch sapio://docs/cursor-rules.
+
+================================================================
+15. PYTHON UI SCOPE (DIALOGS, TABLE CAPTURE)
+================================================================
+
+This preprompt targets Python webhooks and REST scripts. Advanced server-side UI blueprints tied to the rich desktop client are out of scope here. For grid-style bulk input and user prompts in Python, use sapio://examples/python/invocations/table-dialog-webhook and sapio://examples/python/features/client-callback.
+
+================================================================
+16. CONFIGURATION RECORDS
+================================================================
+
+If automation touches ExemplarConfig-style configuration data, use sapio://docs/configuration-records for domain concepts and Sapio product documentation or support for how to read or update that data from Python/REST where applicable. Do not assume a Python example exists for every configuration scenario.
+
+================================================================
+17. DEPRECATIONS & REST HYGIENE
+================================================================
+
+Prefer sapiopylib and sapiopycommons APIs exactly as imported in the fetched example. Avoid deprecated REST endpoints when product documentation marks replacements; confirm details in the instance API docs (e.g. Redoc) and library source. Do not conflate or rename the two libraries in documentation or comments.
+
+================================================================
+18. PYTHON FEATURE EXAMPLE RESOURCES
+================================================================
+
+Fetch sapio://examples/python/features/<slug> when the user needs the corresponding REST or handler pattern (see descriptions in sapio://meta/tool-index).
+
+Scenario or manager area                    | Resource
+--------------------------------------------|--------------------------------------------------
+Accession / ID generation                   | sapio://examples/python/features/accession-manager
+Aliquot helper                              | sapio://examples/python/features/aliquot-helper
+User dialogs / CallbackUtil                 | sapio://examples/python/features/client-callback
+Complex Data Loader (same as CDL invocation)  | sapio://examples/python/features/data-loader-config
+Custom reports                              | sapio://examples/python/features/custom-report-manager
+DataMgmtServer usage                        | sapio://examples/python/features/data-mgmt-server
+DataTypeManager                             | sapio://examples/python/features/data-type-manager
+File Manager / uploads                      | sapio://examples/python/features/file-manager
+NotebookExperimentManager                   | sapio://examples/python/features/notebook-experiment-manager
+Process tracking                            | sapio://examples/python/features/process-tracking
+Record model / PyRecordModel                | sapio://examples/python/features/record-model-manager
+Record relationships                        | sapio://examples/python/features/record-model-relationship-manager
+DataRecord-level access                     | sapio://examples/python/features/data-record-manager
+Navigation / plugin directive (client)      | sapio://examples/python/features/plugin-directive
+Picklist manager                            | sapio://examples/python/features/picklist-manager
+Context / handler wiring                    | sapio://examples/python/features/exemplar-context
+Experiment entries / ELN persist patterns   | sapio://examples/python/features/experiment-entry-manager
+Plate / aliquot                             | sapio://examples/python/features/plate-aliquot
+Reprocessing handler                        | sapio://examples/python/features/reprocessing-handler
+Session manager                             | sapio://examples/python/features/session-manager
+Table dialog (same source as table-dialog-webhook) | sapio://examples/python/features/table-dialog
+Index assignment / pool / sample sheets     | sapio://examples/python/features/index-assignment-and-pool
+Experiment roles                            | sapio://examples/python/features/experiment-roles
+
+================================================================
+19. FINAL RULES & ENFORCEMENT SUMMARY
+================================================================
+
+Absolute: Fetch sapio://docs/cursor-rules before generating code. Use the exact resource from the tables above for the requested scenario. Use resource content as a template only; adapt to the user's request. Do not invent APIs or unsupported libraries. Prefer sapiopylib and sapiopycommons over raw REST as shown in examples. Use sapio://meta/tool-index when unsure which URI to fetch.
+
+================================================================
+END OF SAPIO PYTHON PREPROMPT (TOC SUMMARY)
+================================================================

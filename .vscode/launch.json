@@ -1,0 +1,21 @@
+// Created: 2026-04-09
+// Agent type: Composer
+// Modified: 2026-04-09
+// Agent type: Composer
+// hostName: this machine (hostname). Use the Sapio server host if debugging a remote instance.
+// port: must match the JVM debug port configured for the Sapio application server (5006).
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Remote JVM Debugger",
+            "request": "attach",
+            "hostName": "SAPIO-EHESS",
+            "port": 5006
+        }
+    ]
+}

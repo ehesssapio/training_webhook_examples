@@ -13,7 +13,10 @@ from exercises.training_event.B_webhooks_fundamentals_examples import TrainingEv
     TrainingEventExerciseBroken, TrainingEventContextCounter
 from exercises.training_event.C_export_predefined_search import ExportPredefinedSearch
 from exercises.training_event.D_record_models_comparison import DataRecordTimingExample, RecordModelTimingExample
-from examples.mcp_examples.webhook_registry import register_mcp_example_webhooks
+from approve_shipment import ApproveShipment
+from multilayer_plating_plate_dimensions import MultiLayerPlatingPlateDimensions
+from receive_shipment import ReceiveShipment
+from bulk_samples_from_study import BulkSamplesFromStudy
 
 
 def _env_flag_true(name: str) -> bool:
@@ -78,8 +81,17 @@ config.register('/broken-example', TrainingEventExerciseBroken)
 config.register('/data-record-timing-example', DataRecordTimingExample)
 config.register('/record-model-timing-example', RecordModelTimingExample)
 
-# Extended demos under examples/mcp_examples (Java-parity / feature walkthroughs); see webhook_registry for paths.
-register_mcp_example_webhooks(config)
+# Shipment approval (e-sign): register the same path on two Sapio webhooks — Form Toolbar + Table Toolbar, Shipment only.
+config.register('/approve-shipment', ApproveShipment)
+
+# Receive shipment (table dialog + batch commit): Form Toolbar + Table Toolbar, Shipment only.
+config.register('/receive-shipment', ReceiveShipment)
+
+# 3D plating: experiment entry toolbar — set plate rows/columns from step option plate ID list.
+config.register('/change-plate-dimensions', MultiLayerPlatingPlateDimensions)
+
+# Bulk samples under a study (main toolbar): study → count → accessioned IDs → layout table → process or Logged.
+config.register('/bulk-samples-from-study', BulkSamplesFromStudy)
 
 app = WebhookServerFactory.configure_flask_app(app=None, config=config)
 

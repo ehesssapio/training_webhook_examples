@@ -1,0 +1,464 @@
+<!-- Modified: 2026-04-01 Agent type: Composer -->
+<!-- Modified: 2026-04-01 12:00 Agent type: Composer -->
+<!-- Modified: 2026-04-01 16:00 Agent type: Composer -->
+# Sapio MCP Server - Cursor Rules for Code Compliance
+
+## ⚠️ MANDATORY FIRST STEP - READ BEFORE PROCEEDING ⚠️
+
+**🚨 CRITICAL: You MUST complete this step before generating ANY Sapio code:**
+
+### Pre-Flight Checklist:
+- [ ] Step 1: Read the full Sapio coding standards (all sections). In **Cursor**, read **`.cursorrules`** in this repo (or use **`.cursor/rules/sapio-compliance.mdc`** when that rule is installed); with the **Sapio MCP server**, fetch **`sapio://docs/cursor-rules`** (same standards).
+- [ ] Step 2: Output the following acknowledgment statement verbatim BEFORE any code generation:
+  ```
+  "I have read Sapio's .cursorrules file for best practices and coding standards."
+  ```
+- [ ] Step 3: Before acting or planning, review the MCP server: call list_sapio_resources() and fetch sapio://meta/tool-index. For **Java** plugins, fetch sapio://preprompts/java. For **Python** webhooks or sapiopy work, fetch sapio://preprompts/python and sapio://examples/python/... (use get_sapio_python_webhook_prompt() as a shortcut). When the Sapio MCP server is available, use these resources before generating code—not only local files or site-packages.
+- [ ] Step 4: Only after completing the steps above, proceed with code generation
+
+**Failure to output the acknowledgment statement will result in non-compliant code that violates project standards.**
+
+### Why This Matters:
+- Ensures awareness of modern package patterns (`com.velox.sapio.commons`)
+- Prevents use of deprecated APIs
+- Enforces batch operations and performance best practices
+- Maintains consistency across all Sapio code generation
+
+---
+
+## Project Overview
+This is an MCP (Model Context Protocol) server for Sapio LIMS/ELN extension patterns: **Java server plugins** and **Python webhooks** (same server). It provides examples and pre-prompts for both; the MCP server is **not Java-only**.
+
+## Rule Acknowledgment (Required)
+**Before generating any Sapio code, you MUST output the following statement:**
+"I have read Sapio's .cursorrules file for best practices and coding standards."
+
+This confirms you are aware of and will follow all guidelines in this file.
+
+---
+
+## Using MCP Server Tools for Code Generation
+
+When the Sapio MCP server is available:
+- **Before acting or planning on a task**, call list_sapio_resources() and fetch sapio://meta/tool-index. For **Java** plugins, fetch sapio://preprompts/java (Plugin/scenario → Resource table). For **Python** webhooks, CallbackUtil, CommonsWebhookHandler, or REST from webhooks, fetch sapio://preprompts/python and the matching sapio://examples/python/... resources (tool get_sapio_python_webhook_prompt() summarizes URIs).
+- **Before generating any Sapio code**, fetch resource sapio://docs/cursor-rules and adhere to the returned rules (Java and Python sections as applicable).
+- **For workflow and resource mapping**, use the preprompt for your stack (java vs python); when unsure, fetch sapio://meta/tool-index first (or list_sapio_resources() then fetch the relevant sapio:// URI).
+
+**If the MCP server is unreachable, I must inform the user.**
+
+---
+
+## Java Code Guidelines
+
+### Plugin manager fields – use inherited when available
+**Plugins that extend DefaultOnSavePlugin, DefaultActionMenuPlugin, DefaultExperimentEntryInitPlugin, etc. must use inherited manager fields (recMan, instMan, relationshipMan, dtMan, dataRecordManager) when available and must not resolve those via `exemplarContext.getSingletonManager().getInstance(Class)`.** For RecordModelRelationshipManager use the inherited `relationshipMan` (the singleton manager does not instantiate it). When a manager is not available by inheritance, use the correct method to instantiate it (e.g. `exemplarContext.getInstance(Class)` or `dataMgmtServer.getXxx(user)`).
+
+### Package Imports - Use Modern Patterns
+**ALWAYS use `com.velox.sapio.commons` packages instead of deprecated alternatives:**
+
+```java
+// ✅ CORRECT
+import com.velox.sapio.commons.exemplar.plugin.veloxplugin.ExemplarVeloxServerPlugin;
+import com.velox.sapio.commons.exemplar.definition.form.FormBuilder;
+import com.velox.sapio.commons.exemplar.recordmodel.relationship.Children;
+import com.velox.sapio.commons.exemplar.recordmodel.main.RecordModelManager;
+import com.velox.sapio.commons.exemplar.recordmodel.record.RecordModel;
+
+// ❌ WRONG - Deprecated patterns
+import com.velox.sapioutils.client.elucidated.plugin.ExemplarVeloxServerPlugin;
+import com.velox.sapioutils.client.elucidated.model.manager.*;
+```
+
+### RecordModel vs DataRecord
+**Use RecordModel whenever possible.** Prefer `RecordModel` over the direct `DataRecord` API for most operations:
+
+```java
+// ✅ CORRECT - Use RecordModel for cleaner field access
+List<RecordModel> models = instMan.addExistingRecords(records);
+for (RecordModel model : models) {
+    String sampleId = model.getField("SampleId");
+    Double concentration = model.getField("Concentration");
+}
+
+// ❌ WRONG - Manual DataRecord processing with exception handling
+for (DataRecord record : records) {
+    try {
+        String sampleId = record.getStringVal("SampleId", user);
+        Double concentration = record.getDoubleVal("Concentration", user);
+    } catch (Exception e) {
+        // Error handling noise
+    }
+}
+```
+
+### Comparing DataRecord and RecordModel – use .equals(), never ==
+**For `DataRecord` and `RecordModel`, `==` and `.equals()` are not equivalent.** The API does not guarantee that two instances representing the same logical record are the same object. `==` tests reference equality; `.equals()` is the correct comparison for "same record" semantics. Always use `.equals()` when comparing two records (or a record to another); never use `==` for record identity. (Using `==` for null checks is fine.)
+
+```java
+// ✅ CORRECT – compare records with .equals(); null check with ==
+if (record == null) return;
+if (record1.equals(record2)) { /* same record */ }
+if (model1.equals(model2)) { /* same record */ }
+
+// ❌ WRONG – do not use == for record identity
+if (record1 == record2) { /* unreliable; use .equals() */ }
+if (model1 == model2) { /* unreliable; use .equals() */ }
+```
+
+### Child/Parent Relationships
+**Use the typed relationship API:**
+
+```java
+// ✅ CORRECT - Type-safe child access
+long count = model.get(Children.ofType(StudyModel.DATA_TYPE_NAME)).size();
+RecordModel child = parent.add(Child.ofType("Sample"));
+parent.add(Children.refs(List.of(child1, child2)));
+RecordModel parentRec = child.add(Parent.ofType("Request"));
+
+// ❌ WRONG - Old pattern
+long count = model.getChildren(StudyModel.DATA_TYPE_NAME).size();
+```
+
+### Form/UI Building
+**Use FormBuilder with builder pattern:**
+
+```java
+// ✅ CORRECT
+FormBuilder fb = new FormBuilder(NAME, "Description");
+fb.addField(VeloxStringFieldDefinition.builder()
+    .dataFieldName(FIELD_NAME)
+    .displayName("Display Name")
+    .build());
+return fb.getTemporaryDataType();
+
+// ❌ WRONG - Manual field setup
+TemporaryDataType tempDataType = new TemporaryDataType(NAME, "Description");
+VeloxStringFieldDefinition field = new VeloxStringFieldDefinition();
+field.setDataFieldName(FIELD_NAME);
+field.setDisplayName("Display Name");
+tempDataType.setVeloxFieldDefinition(field);
+```
+
+### InputDialogResult.getValue() – use String, not char[]
+**`InputDialogResult.getValue()` always returns an object; it never returns `char[]`. When expecting a text result you MUST construct a string from it (e.g. `result.getValue().toString()` or a helper). Using the result as `char[]` or passing it directly where a `String` is required causes runtime exceptions.**
+
+```java
+// ✅ CORRECT – always construct String when you need text
+InputDialogResult result = clientCallback.showInputDialog(criteria);
+if (result != null && result.getValue() != null) {
+    String value = result.getValue().toString();
+    // use value
+}
+
+// ✅ CORRECT – reusable helper used in examples
+private static String getInputValueAsString(InputDialogResult result) {
+    if (result == null || result.getValue() == null) return null;
+    return result.getValue().toString();
+}
+
+// ❌ WRONG – getValue() returns Object; never treat as char[]
+char[] chars = result.getValue();  // do not do this
+
+// ❌ WRONG – do not use raw getValue() where a String is expected
+String value = result.getValue();  // type/cast errors; use result.getValue().toString()
+```
+
+### getField() return types – never char[]
+**For both `DataRecord` and `RecordModel`, `getField(...)` (and type-specific getters like `getStringVal`, `getDoubleVal` on DataRecord) never return `char[]`. The runtime always returns one of: `String`, a numeric type (`Integer`, `Long`, `BigDecimal`, `Double`), `Boolean`, or Java epoch time (milliseconds since epoch, as `Long`). Never write code that casts or treats a field value as `char[]`; use the appropriate type (e.g. `String`, `Long`, `Double`) and cast or convert only to those types to avoid errors.**
+
+**When getting a value to place into a string field**, make a new string from the object: use `value == null ? null : value.toString()` (or the empty string `""` if you prefer a non-null default). Do not pass the raw `getField(...)` result to `setField` for a string field without converting to `String` via `toString()`.
+
+```java
+// ✅ CORRECT – treat field values as String, numeric, Boolean, or Long (epoch)
+String sampleId = (String) model.getField("SampleId");
+Double concentration = (Double) model.getField("Concentration");
+Long epochTime = (Long) model.getField("DateField");  // Java epoch ms
+Boolean flag = (Boolean) model.getField("Active");
+
+// ✅ CORRECT – value for a string field: use toString()
+Object otherId = model.getField("OtherSampleId");
+model.setField("Barcode", otherId != null ? otherId.toString() : null);
+
+// ❌ WRONG – getField never returns char[]; do not cast or assume char[]
+char[] chars = (char[]) model.getField("SampleId");  // do not do this
+```
+
+### Date Range fields
+**For Date Range fields**, `getField` / `getDataField` returns `com.velox.util.time.DateRange`. Import `com.velox.util.time.DateRange`. Check with `instanceof DateRange`; then use `getStartMillis()` and `getEndMillis()`. To set, use `model.setField(fieldName, new DateRange(startMillis, endMillis))` (or `record.setDataField(...)` for DataRecord).
+
+```java
+// ✅ CORRECT – read via DataRecord
+Object rawValue = record.getDataField("MyDateRangeField", user);
+if (rawValue instanceof DateRange dateRange) {
+    long start = dateRange.getStartMillis();
+    long end = dateRange.getEndMillis();
+}
+
+// ✅ CORRECT – read and set via RecordModel
+RecordModel model = instMan.addExistingRecord(record);
+DateRange fromModel = (DateRange) model.getField("MyDateRangeField");
+if (fromModel != null) {
+    long start = fromModel.getStartMillis();
+    long end = fromModel.getEndMillis();
+}
+long now = System.currentTimeMillis();
+model.setField("MyDateRangeField", new DateRange(now, now));
+```
+
+### Batch Operations
+**AVOID looping to get records or field values one at a time. Use batch methods:**
+
+```java
+// ✅ CORRECT - Batch operations
+List<RecordModel> models = instMan.addNewRecords("Sample", fieldsList);
+recModelMan.storeChanges();
+
+// ❌ WRONG - One at a time in loops
+for (Map<String, Object> fields : fieldsList) {
+    RecordModel model = instMan.addNewRecord("Sample", fields);
+    recModelMan.storeChanges();  // Don't call in a loop!
+}
+```
+
+### On-save plugins – storeChanges vs storeAndCommit/commit
+**In on-save plugins**, when using record models (e.g. `instMan.addExistingRecords`, `addNewRecord`, `setField`), call `recordModelManager.storeChanges()` (e.g. `recMan.storeChanges()`) after making changes so new records get IDs and changes are staged; the save operation will then persist everything. Do **not** call `storeAndCommit()` or `commit()` (Commit Changes) within an on-save invocation point.
+
+### On-save context – dataRecordList contents
+The `dataRecordList` from on-save context (`OnSaveContext.getDataRecordList()`) includes records with **field changes** and records with **relationship changes**. For example, adding a new record as a child of a parent includes the **parent** in the list. On-save plugins should **check the full list** to determine which data types are involved (in both `shouldRun()` and `run()`), not only the first record.
+
+**On-save – new vs existing:** Both `DataRecord` and `RecordModel` have an `isNew()` method. Use it in on-save plugins to tell whether a record in `getDataRecordList()` is newly created in this save (`true`) or an update to an existing record (`false`).
+
+### Set notebook experiment status change – role assignments and store notebook
+When the plugin runs as a **set notebook experiment status change** (Experiment Status Change) plugin and only performs **role assignments** or other **experiment-level metadata** changes (e.g. `setNotebookExperimentRoleAssignment`), do **not** call `storeNotebookExperiment` or `storeNotebookExperimentAndRecords`. The status-change flow already persists the notebook. Use store-notebook (or `storeAndCommit` for record-only changes) only when the plugin modifies records or experiment entries that must be persisted in this run.
+
+### Getting All Records of a Type
+**Use `getAllRecordsOfType(dataTypeName, user)`; do NOT use `queryDataRecords` with "RecordId > 0":**
+
+```java
+// ✅ CORRECT - Get all records of a type
+List<DataRecord> records = dataRecordManager.getAllRecordsOfType(dataTypeName, user);
+
+// ❌ WRONG - RecordId is not a queryable field for user data types; throws NotFound
+List<DataRecord> records = dataRecordManager.queryDataRecords(dataTypeName, "RecordId > 0", user);
+```
+
+To get every record of a given data type, use `dataRecordManager.getAllRecordsOfType(dataTypeName, user)`. The WHERE clause in `queryDataRecords(dataTypeName, whereClause, user)` can only reference **data fields** defined on that type; `RecordId` is a system field and is not exposed as a queryable field, so "RecordId > 0" fails.
+
+### Custom Reports for Queries
+**Prefer CustomReportManager over queryDataRecords for better performance:**
+- CustomReports are faster and more memory efficient
+- Only returns specified columns vs all fields
+- Can search across hierarchies and do joins
+- Only use `queryDataRecords` when you need the full DataRecord POJO
+
+### ELN experiment manipulation – prefer ElnEntryManager
+**For ELN experiment manipulation** (adding/editing entries, field sets, tabs, entry options, dependencies, etc.), **ElnEntryManager** obtained from context (e.g. `ctx.getElnEntryManager()` or equivalent) is the preferred utility. Fetch resource sapio://examples/java/features/experiment-entry-manager for patterns and for the correct persist order, which is detailed in the following subsection.
+
+### Experiment Entry and Record Persist Order
+**When changing both records and experiment entries, use this order:**
+
+1. **Record changes first** — `recordModelManager.storeChanges()`
+   - New records get record IDs; all changes are staged in the transaction (no DB commit yet).
+   - Entry changes often depend on those IDs (e.g. form entry recordId, table entry record lists), so this step must happen first.
+
+2. **Entry changes second** — update the experiment's entries in memory
+   - `notebookExperiment.setExperimentEntry(entry, user)` / `setExperimentEntryList(entries, user)`
+   - `addRecordsToTableEntry` / `removeRecordsFromTableEntry`, or `EntryStepImpl` (addRecords, storeChanges)
+   - For form entries: `formEntry.setRecordId(model.getRecordId())` then set the entry on the experiment
+   - No persist in between.
+
+3. **Experiment (and record) persistence** — one call at the end
+   - `notebookExperimentManager.storeNotebookExperimentAndRecords(notebookExperiment, commitMessage, clientCallbackRMI, user)` (preferred when you have record + entry changes)
+   - Alternative: `dataRecordManager.storeAndCommit(...)` then `notebookExperimentManager.storeNotebookExperiment(...)` when you explicitly separate commits
+
+**Why:** Doing a persist in the middle (e.g. inside `addTableEntry`) then calling `setExperimentEntry` with the same in-memory entry causes the server to reject it with "different last modified date ... out of date" because the server's copy was updated by the earlier persist. Either do one persist at the end, or after any persist re-fetch the entry by ID (`getEntryById(entry.getExperimentEntryId())`) before the next `setExperimentEntry`.
+
+```java
+// ✅ CORRECT - Record changes, then entry changes, then single persist
+recModelMan.storeChanges();
+notebookExperiment.setExperimentEntry(entry, user);
+notebookExperimentManager.storeNotebookExperimentAndRecords(notebookExperiment, commitMessage, clientCallbackRMI, user);
+
+// ❌ WRONG - Persist in the middle then setExperimentEntry with same entry (causes "out of date" error)
+manager.addTableEntry(...);           // persists inside
+manager.addFieldSet(newEntry, ...);    // newEntry has stale lastModified
+```
+
+### ELN experiment entry types — use template metadata
+When a plugin sets or reads a record on an experiment entry (e.g. setting the record for "Generate Sample Sheet"), it **MUST** use the entry's actual type, not assume "single record = form entry". Call `get_eln_template_entries(template_name)` (or use the experiment's entry list) and read each entry's **EntryType** in the response (e.g. TemplateForm, TemplateAttachment, TemplateTable, TemplatePlugin).
+
+- **TemplateForm** → use `ExperimentFormEntry` and `setRecordId(recordId)` (or equivalent form-entry API).
+- **TemplateAttachment** → use the attachment-entry type (e.g. `ExperimentAttachmentEntry` or the API that sets the attachment record on an attachment entry). Do **NOT** cast to `ExperimentFormEntry`; attachment entries are a different runtime type even though they typically hold one record.
+- **TemplateTable** → use `ExperimentTableEntry` and table APIs (e.g. `addRecordsToTableEntry`, `addRecordsToEntry`).
+
+If the code sets a record on a named entry (e.g. "Generate Sample Sheet"), it **MUST** branch on that entry's EntryType (or runtime type) and use the correct class and API for that type. Do not assume an entry is a form entry solely because it has one record.
+
+### Plugin Class Structure
+**Use proper generics and implement required abstract methods:**
+
+```java
+public class Plugin extends ExemplarVeloxServerPlugin<VeloxServerPluginContext> 
+    implements HomepageTemporaryDataTableComponentPlugin {
+
+    @Override
+    public byte[] getIcon() { return null; }
+
+    @Override
+    protected PluginResult run(VeloxServerPluginContext ctx) { return null; }
+}
+```
+
+### Plugins that accept a file
+When a user wants a **plugin that accepts a file** (upload from user), use the pattern shown in the FileManager example: `clientCallback.showFileDialog(...)` to get the path, then `StreamingUtil.readBytesFromUser(filePath, getExemplarContext())` to read bytes. Fetch resource sapio://examples/java/features/file-manager for the full example (see `runUploadDemo()`).
+**Do not** use File Bridge for this unless the user **explicitly** asks for File Bridge. File Bridge is for specific server-side file share/import scenarios; the normal case is user-selected file via ClientCallback + StreamingUtil.
+
+### Retrieving attachment data from records
+When you need to **read attachment data** from an existing record (e.g. attachment record from InstanceManager, or a DataRecord from reports/task attachments), use the following patterns.
+
+**RecordModel (Exemplar layer)** – when you have a `RecordModel` (e.g. from `instMan.addExistingRecords()` or a wrapped model):
+
+```java
+import com.velox.sapio.commons.exemplar.recordmodel.attachment.AttachmentData;
+
+// Get bytes in-memory (rec is a RecordModel, e.g. attachment record)
+byte[] bytes = rec.get(AttachmentData.bytes());
+
+// Stream to an OutputStream – preferred for large files; returns bytes written (Long)
+Long bytesWritten = rec.get(AttachmentData.stream(outputStream));
+
+// Record image if applicable
+byte[] recordImageBytes = rec.get(AttachmentData.recordImageBytes());
+```
+
+Under the hood, `AttachmentData.bytes()` uses `AttachmentDataModel.getData(true)`, which calls `StreamingUtil.readBytesFromRecord(...)` when the record has a DataRecord.
+
+**DataRecord (Velox API layer)** – when you have a `DataRecord` (e.g. from reports, task attachments, or `model.getDataRecord()`):
+
+```java
+import com.velox.sapio.commons.utils.StreamingUtil;
+
+// Bytes (recommended)
+byte[] bytes = StreamingUtil.readBytesFromRecord(dataRecord, user);
+
+// Or direct byte array
+byte[] bytes = dataRecord.getAttachmentData(user);
+
+// Stream for large data
+try (InputStream is = dataRecord.openAttachmentDataInputStream(user)) {
+    // read from is, or use StreamingUtil.readStreamFromRecord for writing to an OutputStream
+}
+```
+
+Helpers: `dataRecord.isAttachmentDataPresent(user)` – whether attachment data exists; `dataRecord.getAttachmentLength(user)` – size in bytes.
+
+**Size limits:** `StreamingUtil.readBytesFromRecord` (and thus `AttachmentData.bytes()` when loading from the server) uses a maximum in-memory size (`StreamingUtil.MAX_MEMORY_SIZE`, 100 MB) and a buffer limit (e.g. 15 MB). For larger files, use streaming to avoid loading full attachment data into memory (see CR-37363).
+
+| You have…   | Get bytes | Stream (large files) |
+|------------|-----------|------------------------|
+| RecordModel | `rec.get(AttachmentData.bytes())` | `rec.get(AttachmentData.stream(outputStream))` |
+| DataRecord | `StreamingUtil.readBytesFromRecord(dr, user)` or `dr.getAttachmentData(user)` | `dr.openAttachmentDataInputStream(user)` |
+
+### PluginResult – valid constructors only
+**PluginResult has no constructor (boolean, String).** Using `new PluginResult(false, "error message")` causes compilation failure.
+
+```java
+// ✅ CORRECT – success or failure only
+return new PluginResult(true);
+return new PluginResult(false);
+
+// ✅ CORRECT – show error message then return failure
+clientCallback.displayError("Validation failed: missing required field.");
+return new PluginResult(false);
+
+// ✅ CORRECT – return with a directive (second arg must be a PluginDirective)
+return new PluginResult(true, new DataRecordFormDirective(record));
+return new PluginResult(true, new RefreshCurrentViewDirective());
+
+// ✅ CORRECT – ELN/experiment entry plugins: use EnbPluginResult
+return new EnbPluginResult(true, entry);
+
+// ❌ WRONG – no such constructor
+return new PluginResult(false, "error message");
+```
+
+### Autogenerated Model Classes
+When working with a specific data model, assume autogenerated wrapper classes exist (e.g., `SampleModel`, `RequestModel`) that extend `AbstractRecordModelWrapper` and provide:
+- Static `DATA_TYPE_NAME` constant
+- Static field name constants
+- Type-safe getters/setters
+
+### NGS index assignment and sample sheets
+Sample sheets must be generated from **IndexBarcode** records, which carry the **sample id** and **one or more indices** per sample (the indices in the pool). **Pool IDs must never be used in sample sheets.** Use IndexBarcode data (sample id + indices), e.g. via `SampleUtilManager.getIndices()` on constituent samples or by reading IndexBarcode children of samples. **One row per IndexBarcode record:** each row in the sample sheet must be based on one IndexBarcode record; do not aggregate multiple IndexBarcode records into one row per sample. Helper methods that return IndexBarcode data for pool constituents (e.g. `SampleUtilManager.getIndices()`) typically return more than one record per sample when there are multiple indices; the sample sheet should have one row for each such record. When implementing index assignment, pooling, or sample-sheet generation, fetch resource sapio://examples/java/features/index-assignment-and-pool for the example.
+
+---
+
+## General Guidelines
+
+### Output Rules
+- Only output generated code without explaining reasoning unless asked
+- Wrap code between triple backticks (```)
+- Keep code clean and well-organized
+- In common informational displays to the user (dialogs, messages, labels, `display_text`, notifications, logs aimed at end users, etc.), show **human-readable user names** (display names / login names as appropriate to the API), not raw user IDs—unless the user explicitly asks to show IDs or the task is purely technical (e.g. debugging). If it is unclear which name field to use or names are unavailable without extra calls, ask the user to clarify.
+
+### Agent attribution (chat + file header) – ALWAYS required
+
+These requirements **ALWAYS** apply—no exceptions. Every conversation and every created or modified file must follow them.
+
+**In chat (ALWAYS):** At the start of the conversation (or when beginning work on a task), state which agent you are, e.g. "Agent: Composer" or "I am Composer." This is required every time—no exceptions.
+
+**File header (ALWAYS):** Every file produced or modified by an agent **MUST** include at the top of the file a documentation block with:
+- **Created:** date and time (when creating), e.g. ISO 8601 or "YYYY-MM-DD HH:mm"
+- **Agent type:** e.g. Composer, GPT-4, Claude
+- **On modifications:** Preserve previous attribution notices, keeping **at most 3** (e.g. 1 Created + 2 most recent Modified). When adding a new modification, if there are already 3 notices, remove the oldest so the header never exceeds 3 entries.
+
+**Format by language:** Java = Javadoc `/** ... */` at top; Python = module docstring (triple-quoted) at top; other = standard file-header comment for that language.
+
+**Example (Java, new file):**
+```java
+/**
+ * Created: 2025-03-05 14:30
+ * Agent type: Composer
+ */
+package com.example;
+```
+
+**Example (Python, new file):**
+```python
+"""
+Created: 2025-03-05 14:30
+Agent type: Composer
+"""
+```
+
+**Example (Java, after 2 modifications—preserve up to 3 notices):**
+```java
+/**
+ * Created: 2025-03-05 14:30
+ * Agent type: Composer
+ * Modified: 2025-03-06 09:00
+ * Agent type: GPT-4
+ * Modified: 2025-03-07 11:15
+ * Agent type: Composer
+ */
+package com.example;
+```
+If a fourth modification is made, drop the oldest notice so only 3 remain.
+
+### Data Model Awareness
+- Always consider the target system's data model when generating code
+- **Use record models whenever possible** (Java: classes extending RecordModel / AbstractRecordModelWrapper for field access and type-safe definitions)
+- Use autogenerated model classes when available
+- Respect data type hierarchies and relationships
+
+### Error Handling
+- Use appropriate Sapio exception types
+- Handle `UserRequestedCancelServerException` gracefully for cancelled dialogs
+- Provide meaningful error messages to users
+
+### Performance
+- Batch operations whenever possible
+- Use CustomReports instead of queryDataRecords for read-only queries
+- Avoid N+1 query patterns
+
+### Prohibited
+- Do not invent new APIs, classes, or libraries. Use only standard Java and com.velox (Sapio) as appropriate.
